@@ -1,19 +1,20 @@
-// Import Express.js
 const express = require('express');
 
-// Create an Express app
 const app = express();
 
-// Middleware to parse JSON bodies
 app.use(express.json());
 
-// Set port and verify_token
 const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
+const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
 
-// Route for GET requests
+// GET: Verify webhook with Meta
 app.get('/', (req, res) => {
-  const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
+  const {
+    'hub.mode': mode,
+    'hub.challenge': challenge,
+    'hub.verify_token': token
+  } = req.query;
 
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('WEBHOOK VERIFIED');
@@ -23,15 +24,30 @@ app.get('/', (req, res) => {
   }
 });
 
-// Route for POST requests
-app.post('/', (req, res) => {
+// POST: Receive WhatsApp webhook and forward it to n8n
+app.post('/', async (req, res) => {
   const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
   console.log(`\n\nWebhook received ${timestamp}\n`);
   console.log(JSON.stringify(req.body, null, 2));
-  res.status(200).end();
+
+  try {
+    await fetch(n8nWebhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(req.body)
+    });
+
+    console.log('Forwarded to n8n');
+    res.status(200).end();
+  } catch (error) {
+    console.error('Error forwarding to n8n:', error);
+    res.status(500).end();
+  }
 });
 
-// Start the server
 app.listen(port, () => {
   console.log(`\nListening on port ${port}\n`);
 });
