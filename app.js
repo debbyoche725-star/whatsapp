@@ -1,14 +1,22 @@
+```js
+// Import Express.js
 const express = require('express');
 
+// Create an Express app
 const app = express();
 
+// Middleware to parse JSON bodies
 app.use(express.json());
 
+// Environment variables
 const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
 const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
 
-// GET: Verify webhook with Meta
+// --------------------------------------------------
+// GET /
+// Meta uses this route to verify your webhook
+// --------------------------------------------------
 app.get('/', (req, res) => {
   const {
     'hub.mode': mode,
@@ -18,21 +26,36 @@ app.get('/', (req, res) => {
 
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('WEBHOOK VERIFIED');
-    res.status(200).send(challenge);
-  } else {
-    res.status(403).end();
+    return res.status(200).send(challenge);
   }
+
+  console.log('WEBHOOK VERIFICATION FAILED');
+  return res.status(403).end();
 });
 
-// POST: Receive WhatsApp webhook and forward it to n8n
+// --------------------------------------------------
+// POST /
+// Meta sends WhatsApp messages/events here
+// We forward them to n8n
+// --------------------------------------------------
 app.post('/', async (req, res) => {
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const timestamp = new Date()
+    .toISOString()
+    .replace('T', ' ')
+    .slice(0, 19);
 
-  console.log(`\n\nWebhook received ${timestamp}\n`);
+  console.log(`\nWebhook received ${timestamp}`);
   console.log(JSON.stringify(req.body, null, 2));
 
+  // Make sure the n8n URL exists
+  if (!n8nWebhookUrl) {
+    console.error('N8N_WEBHOOK_URL is not configured');
+    return res.status(500).end();
+  }
+
   try {
-    await fetch(n8nWebhookUrl, {
+    // Forward WhatsApp webhook to n8n
+    const n8nResponse = await fetch(n8nWebhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -40,14 +63,38 @@ app.post('/', async (req, res) => {
       body: JSON.stringify(req.body)
     });
 
-    console.log('Forwarded to n8n');
-    res.status(200).end();
+    console.log(`n8n response status: ${n8nResponse.status}`);
+
+    if (!n8nResponse.ok) {
+      const responseText = await n8nResponse.text();
+
+      console.error('n8n returned an error:');
+      console.error(responseText);
+
+      // Still acknowledge Meta so it doesn't keep retrying
+      return res.status(200).end();
+    }
+
+    console.log('Successfully forwarded webhook to n8n');
+
+    // Tell Meta we successfully received the webhook
+    return res.status(200).end();
+
   } catch (error) {
-    console.error('Error forwarding to n8n:', error);
-    res.status(500).end();
+    console.error('Error forwarding webhook to n8n:');
+    console.error(error);
+
+    // Return 200 to Meta after receiving the event.
+    // The error is logged so we can troubleshoot it.
+    return res.status(200).end();
   }
 });
 
+// --------------------------------------------------
+// Start server
+// --------------------------------------------------
 app.listen(port, () => {
   console.log(`\nListening on port ${port}\n`);
+  console.log('Webhook server is running');
 });
+```
