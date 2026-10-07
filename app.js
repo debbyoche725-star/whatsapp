@@ -14,15 +14,8 @@ const verifyToken = process.env.VERIFY_TOKEN;
 const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
 
 // --------------------------------------------------
-// Health check
-// --------------------------------------------------
-app.get('/health', (req, res) => {
-  res.status(200).send('Webhook server is running');
-});
-
-// --------------------------------------------------
 // GET /
-// Meta uses this route to verify your WhatsApp webhook
+// Meta uses this route to verify your webhook
 // --------------------------------------------------
 app.get('/', (req, res) => {
   const {
@@ -54,14 +47,14 @@ app.post('/', async (req, res) => {
   console.log(`\nWebhook received ${timestamp}`);
   console.log(JSON.stringify(req.body, null, 2));
 
-  // Check that the n8n URL exists
+  // Make sure the n8n URL exists
   if (!n8nWebhookUrl) {
     console.error('N8N_WEBHOOK_URL is not configured');
     return res.status(500).end();
   }
 
   try {
-    // Forward the WhatsApp webhook to n8n
+    // Forward WhatsApp webhook to n8n
     const n8nResponse = await fetch(n8nWebhookUrl, {
       method: 'POST',
       headers: {
@@ -78,26 +71,27 @@ app.post('/', async (req, res) => {
       console.error('n8n returned an error:');
       console.error(responseText);
 
-      // Acknowledge the Meta webhook
+      // Still acknowledge Meta so it doesn't keep retrying
       return res.status(200).end();
     }
 
     console.log('Successfully forwarded webhook to n8n');
 
-    // Tell Meta the webhook was received
+    // Tell Meta we successfully received the webhook
     return res.status(200).end();
 
   } catch (error) {
     console.error('Error forwarding webhook to n8n:');
     console.error(error);
 
-    // Acknowledge Meta after receiving the event
+    // Return 200 to Meta after receiving the event.
+    // The error is logged so we can troubleshoot it.
     return res.status(200).end();
   }
 });
 
 // --------------------------------------------------
-// Start the server
+// Start server
 // --------------------------------------------------
 app.listen(port, () => {
   console.log(`\nListening on port ${port}\n`);
